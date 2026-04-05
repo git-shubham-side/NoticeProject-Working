@@ -65,7 +65,6 @@ export function NoticeForm({ notice, onSuccess }: NoticeFormProps) {
     deliveryChannels: {
       inApp: notice?.deliveryChannels?.inApp ?? true,
       email: notice?.deliveryChannels?.email ?? false,
-      push: notice?.deliveryChannels?.push ?? false,
     },
   });
 
@@ -116,8 +115,6 @@ export function NoticeForm({ notice, onSuccess }: NoticeFormProps) {
         const data = await response.json();
         if (publish && formData.deliveryChannels.email && !data.deliveryStatus?.emailConfigured) {
           alert('Notice published, but email delivery is not configured yet. Add SMTP settings to enable email sending.');
-        } else if (publish && formData.deliveryChannels.push && !data.deliveryStatus?.pushConfigured) {
-          alert('Notice published, but mobile push is not configured yet. Add Firebase admin and device tokens to enable push sending.');
         }
         onSuccess?.();
         router.push('/notices');
@@ -667,24 +664,6 @@ export function NoticeForm({ notice, onSuccess }: NoticeFormProps) {
                     setFormData({
                       ...formData,
                       deliveryChannels: { ...formData.deliveryChannels, email: checked },
-                    })
-                  }
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Mobile Push</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Send browser or mobile push alerts through Firebase
-                  </p>
-                </div>
-                <Switch
-                  checked={formData.deliveryChannels.push}
-                  onCheckedChange={(checked) =>
-                    setFormData({
-                      ...formData,
-                      deliveryChannels: { ...formData.deliveryChannels, push: checked },
                     })
                   }
                 />

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
-import { syncFirebaseNotificationsReadState } from '@/lib/firebase/notifications-server';
 import { dataStore } from '@/lib/mock-data';
 import { publishToUserNotifications } from '@/lib/realtime';
 
@@ -28,7 +27,6 @@ export async function POST(
     notificationId: notification.id,
     notification,
   });
-  await syncFirebaseNotificationsReadState(user.id, notification.id, true);
 
   return NextResponse.json({
     success: true,

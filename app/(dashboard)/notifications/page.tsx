@@ -7,8 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { NotificationList } from "@/components/notifications/notification-item"
-import { subscribeToFirebaseNotifications } from "@/lib/firebase/notifications-client"
-import { clearStoredBrowserPushToken, getStoredBrowserPushToken, registerBrowserPushToken } from "@/lib/firebase/messaging"
+import { subscribeToNotificationStream } from "@/lib/notifications-stream"
 import { useAuth } from "@/context/auth-context"
 import { Bell, Settings, Inbox, AlertTriangle, Clock, CheckCircle2 } from "lucide-react"
 import type { Notification, NotificationPreferences } from "@/types"
@@ -20,7 +19,6 @@ export default function NotificationsPage() {
   const [activeTab, setActiveTab] = useState("all")
   const [settings, setSettings] = useState<NotificationPreferences>({
     emailNotifications: true,
-    pushNotifications: true,
     notifyNewNotices: true,
     notifyUrgent: true,
     notifyReminders: true,
@@ -55,9 +53,8 @@ export default function NotificationsPage() {
       return
     }
 
-    const unsubscribe = subscribeToFirebaseNotifications(user.id, (nextNotifications) => {
-      setNotifications(nextNotifications)
-      setLoading(false)
+    const unsubscribe = subscribeToNotificationStream(() => {
+      void fetchNotifications()
     })
 
     return () => {
@@ -96,38 +93,6 @@ export default function NotificationsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(next),
     })
-  }
-
-  const handlePushPreferenceChange = async (checked: boolean) => {
-    const next = { ...settings, pushNotifications: checked }
-    await updatePreferences(next)
-
-    if (!checked) {
-      const token = getStoredBrowserPushToken()
-      if (token) {
-        await fetch("/api/notifications/device-token", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
-        })
-        clearStoredBrowserPushToken()
-      }
-      return
-    }
-
-    const token = await registerBrowserPushToken()
-    if (!token) {
-      alert("Push notification setup failed. Check browser notification permission and Firebase Web Push configuration.");
-      return
-    }
-
-    await fetch("/api/notifications/device-token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    })
-
-    alert("Push notifications enabled for this browser/device.")
   }
 
   const filteredNotifications = notifications.filter(n => {
@@ -274,19 +239,11 @@ export default function NotificationsPage() {
                   />
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Push Notifications</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Receive browser push notifications
-                    </p>
-                  </div>
-                  <Switch
-                    checked={settings.pushNotifications}
-                    onCheckedChange={(checked) =>
-                      void handlePushPreferenceChange(checked)
-                    }
-                  />
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <Label>Live In-App Updates</Label>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    New notifications appear in the dashboard in real time while you are signed in.
+                  </p>
                 </div>
 
                 <div className="flex items-center justify-between">

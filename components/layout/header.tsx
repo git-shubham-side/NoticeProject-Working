@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { subscribeToFirebaseNotifications } from '@/lib/firebase/notifications-client';
+import { subscribeToNotificationStream } from '@/lib/notifications-stream';
 import { Bell, LogOut, Menu, User, Settings, Moon, Sun } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -26,6 +26,16 @@ export function Header({ onMenuClick }: HeaderProps) {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [notificationCount, setNotificationCount] = useState(0);
 
+  const refreshNotificationCount = async () => {
+    try {
+      const response = await fetch('/api/notifications?unreadOnly=true');
+      const data = await response.json();
+      setNotificationCount(data.notifications?.length ?? 0);
+    } catch {
+      // Keep the existing badge count if refresh fails.
+    }
+  };
+
   useEffect(() => {
     // Check for saved theme preference
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
@@ -36,14 +46,7 @@ export function Header({ onMenuClick }: HeaderProps) {
 
     // Fetch notification count
     if (user) {
-      fetch('/api/notifications?unreadOnly=true')
-        .then(res => res.json())
-        .then(data => {
-          if (data.notifications) {
-            setNotificationCount(data.notifications.length);
-          }
-        })
-        .catch(() => {});
+      void refreshNotificationCount();
     }
   }, [user]);
 
@@ -52,8 +55,8 @@ export function Header({ onMenuClick }: HeaderProps) {
       return;
     }
 
-    const unsubscribe = subscribeToFirebaseNotifications(user.id, notifications => {
-      setNotificationCount(notifications.filter(notification => !notification.isRead).length);
+    const unsubscribe = subscribeToNotificationStream(() => {
+      void refreshNotificationCount();
     });
 
     return () => {
