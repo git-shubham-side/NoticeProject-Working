@@ -37,8 +37,11 @@ export function getTargetedUserIds(notice: Pick<Notice, 'targetType' | 'targetId
 export async function createNoticeNotifications(notice: Notice, excludeUserId: string) {
   const recipients = getTargetedUserIds(notice);
   const recipientUsers = dataStore.users.filter(user => recipients.includes(user.id) && user.id !== excludeUserId);
+  const author = dataStore.users.find(user => user.id === notice.authorId);
 
-  await deliverNoticeChannels(notice, recipientUsers, notice.deliveryChannels);
+  await deliverNoticeChannels(notice, recipientUsers, notice.deliveryChannels, {
+    enableWhatsApp: author?.role === 'teacher',
+  });
 
   if (notice.deliveryChannels && !notice.deliveryChannels.inApp) {
     return;

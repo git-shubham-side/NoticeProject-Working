@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
+import { getCurrentUser } from "@/lib/auth"
+import { dataStore } from "@/lib/mock-data"
+import type { Notice } from "@/types"
 
 // GET /api/analytics - Get analytics data
 export async function GET(request: Request) {
-  const cookieStore = await cookies()
-  const sessionToken = cookieStore.get("session_token")?.value
+  const user = await getCurrentUser()
 
-  if (!sessionToken) {
+  if (!user) {
     return NextResponse.json(
       { error: "Unauthorized" },
       { status: 401 }
@@ -15,7 +16,11 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const period = searchParams.get("period") || "30d"
-  const type = searchParams.get("type") || "overview"
+  const days = period === "7d" ? 7 : period === "30d" ? 30 : 90
+
+  if (user.role === "teacher") {
+    return NextResponse.json(buildTeacherAnalytics(user.id, days))
+  }
 
   // Generate mock analytics data
   const generateTrendData = (days: number) => {
@@ -33,8 +38,6 @@ export async function GET(request: Request) {
     }
     return data
   }
-
-  const days = period === "7d" ? 7 : period === "30d" ? 30 : 90
 
   const analytics = {
     overview: {
@@ -94,4 +97,172 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json(analytics)
+}
+
+function buildTeacherAnalytics(teacherId: string, days: number) {
+  const teacherNotices = dataStore.notices
+    .filter(notice => notice.authorId === teacherId && notice.isPublished)
+    .sort((a, b) => new Date(a.publishedAt || a.createdAt).getTime() - new Date(b.publishedAt || b.createdAt).getTime())
+
+  const readAnalytics = teacherNotices.map(notice => getNoticeReadAnalytics(notice))
+  const totalNotices = teacherNotices.length
+  const totalReads = readAnalytics.reduce((sum, item) => sum + item.readCount, 0)
+  const totalTargets = readAnalytics.reduce((sum, item) => sum + item.totalStudents, 0)
+  const totalUnread = Math.max(0, totalTargets - totalReads)
+  const readRate = totalTargets > 0 ? Number(((totalReads / totalTargets) * 100).toFixed(1)) : 0
+  const recentTrendData = buildTeacherTrendData(teacherNotices, days)
+
+  return {
+    overview: {
+      totalNotices,
+      totalViews: totalTargets,
+      totalReads,
+      readRate,
+      activeUsers: readAnalytics.filter(item => item.readCount > 0).length,
+      avgTimeToRead: `${Math.max(1, Math.round(readRate / 10))} hrs`,
+      trends: {
+        notices: 0,
+        views: 0,
+        reads: 0,
+        readRate: 0,
+      },
+    },
+    noticesByCategory: buildNoticeCategoryDistribution(teacherNotices),
+    noticesByPriority: buildNoticePriorityDistribution(teacherNotices),
+    trendData: recentTrendData,
+    topNotices: readAnalytics
+      .slice()
+      .sort((a, b) => b.readRate - a.readRate)
+      .slice(0, 5)
+      .map(item => ({
+        id: item.id,
+        title: item.title,
+        views: item.totalStudents,
+        reads: item.readCount,
+        readRate: item.readRate,
+      })),
+    departmentEngagement: [],
+    hourlyDistribution: [],
+    teacherReadAnalytics: readAnalytics,
+    teacherReadDistribution: [
+      { name: "Read", value: totalReads, color: "#10b981" },
+      { name: "Unread", value: totalUnread, color: "#f97316" },
+    ],
+  }
+}
+
+function getNoticeReadAnalytics(notice: Notice) {
+  const targetedStudentIds = dataStore.users
+    .filter(user => {
+      if (user.role !== "student") {
+        return false
+      }
+
+      switch (notice.targetType) {
+        case "all":
+          return true
+        case "institution":
+          return notice.targetIds.includes(user.institutionId || "")
+        case "department":
+          return notice.targetIds.includes(user.departmentId || "")
+        case "class":
+          return notice.targetIds.includes(user.classId || "")
+        case "specific_users":
+          return notice.targetIds.includes(user.id)
+        default:
+          return false
+      }
+    })
+    .map(student => student.id)
+
+  const readStudentIds = new Set(
+    dataStore.noticeReadStatus
+      .filter(status => status.noticeId === notice.id && targetedStudentIds.includes(status.userId))
+      .map(status => status.userId)
+  )
+
+  const totalStudents = targetedStudentIds.length
+  const readCount = readStudentIds.size
+  const unreadCount = Math.max(0, totalStudents - readCount)
+
+  return {
+    id: notice.id,
+    title: notice.title,
+    totalStudents,
+    readCount,
+    unreadCount,
+    readRate: totalStudents > 0 ? Number(((readCount / totalStudents) * 100).toFixed(1)) : 0,
+  }
+}
+
+function buildTeacherTrendData(notices: Notice[], days: number) {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() - (days - 1))
+
+  return Array.from({ length: days }, (_, index) => {
+    const day = new Date(start)
+    day.setDate(start.getDate() + index)
+
+    const dayKey = day.toISOString().split("T")[0]
+    const noticesForDay = notices.filter(notice => {
+      const publishedDate = new Date(notice.publishedAt || notice.createdAt)
+      return publishedDate.toISOString().split("T")[0] === dayKey
+    })
+
+    const reads = noticesForDay.reduce((sum, notice) => sum + getNoticeReadAnalytics(notice).readCount, 0)
+    const targets = noticesForDay.reduce((sum, notice) => sum + getNoticeReadAnalytics(notice).totalStudents, 0)
+
+    return {
+      date: dayKey,
+      notices: noticesForDay.length,
+      views: targets,
+      reads,
+    }
+  })
+}
+
+function buildNoticeCategoryDistribution(notices: Notice[]) {
+  const colorMap: Record<string, string> = {
+    academic: "#3b82f6",
+    administrative: "#10b981",
+    events: "#f59e0b",
+    examinations: "#ef4444",
+    sports: "#8b5cf6",
+    cultural: "#ec4899",
+    placement: "#06b6d4",
+    other: "#6b7280",
+  }
+
+  const counts = new Map<string, number>()
+  notices.forEach((notice) => {
+    const key = notice.category || "other"
+    counts.set(key, (counts.get(key) || 0) + 1)
+  })
+
+  return [...counts.entries()].map(([name, value]) => ({
+    name: name.charAt(0).toUpperCase() + name.slice(1),
+    value,
+    color: colorMap[name] || "#6b7280",
+  }))
+}
+
+function buildNoticePriorityDistribution(notices: Notice[]) {
+  const colorMap: Record<string, string> = {
+    low: "#22c55e",
+    medium: "#eab308",
+    high: "#f97316",
+    urgent: "#ef4444",
+  }
+
+  const counts = new Map<string, number>()
+  notices.forEach((notice) => {
+    counts.set(notice.priority, (counts.get(notice.priority) || 0) + 1)
+  })
+
+  return [...counts.entries()].map(([name, value]) => ({
+    name: name.charAt(0).toUpperCase() + name.slice(1),
+    value,
+    color: colorMap[name] || "#6b7280",
+  }))
 }

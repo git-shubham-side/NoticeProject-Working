@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
-import { X, Upload, Calendar, Sparkles, Languages, Tags } from 'lucide-react';
+import { X, Upload, Calendar, Sparkles, Languages } from 'lucide-react';
 import { LANGUAGE_OPTIONS, NOTICE_CATEGORIES, NOTICE_PRIORITIES, NOTICE_TARGET_TYPES } from '@/lib/constants';
 import type { Notice, Institution, Department, Class, User, Attachment, LanguageCode, NoticeTranslation } from '@/types';
 
@@ -88,6 +88,55 @@ export function NoticeForm({ notice, onSuccess }: NoticeFormProps) {
       .then(res => res.json())
       .then(data => setUsers(data.users || []));
   }, [user]);
+
+  useEffect(() => {
+    const title = formData.title.trim();
+    const content = formData.content.trim();
+
+    if (!title && !content) {
+      setClassificationHint(null);
+      setFormData((current) => ({
+        ...current,
+        category: 'other',
+      }));
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      setClassificationLoading(true);
+
+      try {
+        const response = await fetch('/api/notices/classify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, content }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Could not classify notice');
+        }
+
+        setFormData((current) => ({
+          ...current,
+          category: data.classification.category,
+        }));
+        setClassificationHint({
+          category: data.classification.category,
+          confidence: data.classification.confidence,
+          reason: data.classification.reason,
+        });
+      } catch (error) {
+        console.error('Automatic classification failed:', error);
+      } finally {
+        setClassificationLoading(false);
+      }
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [formData.title, formData.content]);
 
   const handleSubmit = async (e: React.FormEvent, publish: boolean = false) => {
     e.preventDefault();
@@ -180,40 +229,6 @@ export function NoticeForm({ notice, onSuccess }: NoticeFormProps) {
       alert(error instanceof Error ? error.message : 'Assistant generation failed');
     } finally {
       setAssistantLoading(false);
-    }
-  };
-
-  const handleAutoClassify = async () => {
-    setClassificationLoading(true);
-
-    try {
-      const response = await fetch('/api/notices/classify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: formData.title,
-          content: formData.content,
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Could not classify notice');
-      }
-
-      setFormData((current) => ({
-        ...current,
-        category: data.classification.category,
-      }));
-      setClassificationHint({
-        category: data.classification.category,
-        confidence: data.classification.confidence,
-        reason: data.classification.reason,
-      });
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Auto classification failed');
-    } finally {
-      setClassificationLoading(false);
     }
   };
 
@@ -337,21 +352,10 @@ export function NoticeForm({ notice, onSuccess }: NoticeFormProps) {
                 {(assistantLoading || isLoading) && <Spinner className="mr-2 h-4 w-4" />}
                 Generate polished draft
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleAutoClassify}
-                disabled={classificationLoading || isLoading}
-                className="w-full sm:w-auto"
-              >
-                {(classificationLoading || isLoading) && <Spinner className="mr-2 h-4 w-4" />}
-                <Tags className="mr-2 h-4 w-4" />
-                Auto classify category
-              </Button>
               {classificationHint && (
                 <div className="rounded-lg border bg-muted/40 p-3 text-sm">
                   <p className="font-medium">
-                    Suggested category: {NOTICE_CATEGORIES.find((item) => item.value === classificationHint.category)?.label ?? classificationHint.category}
+                    AI category: {NOTICE_CATEGORIES.find((item) => item.value === classificationHint.category)?.label ?? classificationHint.category}
                   </p>
                   <p className="mt-1 text-muted-foreground">
                     Confidence: {Math.round(classificationHint.confidence * 100)}%
@@ -381,22 +385,18 @@ export function NoticeForm({ notice, onSuccess }: NoticeFormProps) {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="category">Category</Label>
-                <Select
-                  value={formData.category}
-                  onValueChange={(value) => setFormData({ ...formData, category: value as NonNullable<Notice['category']> })}
-                >
-                  <SelectTrigger id="category">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {NOTICE_CATEGORIES.map((category) => (
-                      <SelectItem key={category.value} value={category.value}>
-                        {category.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>AI Notice Type</Label>
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">
+                      {NOTICE_CATEGORIES.find((item) => item.value === formData.category)?.label ?? 'Other'}
+                    </Badge>
+                    {classificationLoading && <Spinner className="h-4 w-4" />}
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    The notice type is chosen automatically from the title and content.
+                  </p>
+                </div>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="content">Content *</Label>

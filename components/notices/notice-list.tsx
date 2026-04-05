@@ -9,14 +9,25 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Grid3X3, List, RefreshCw } from "lucide-react"
 import { useAuth } from "@/context/auth-context"
-import type { Notice } from "@/types"
+import type { Notice, User } from "@/types"
+
+type NoticeListItem = Notice & {
+  author?: User
+  isRead?: boolean
+  isBookmarked?: boolean
+  readStats?: {
+    totalStudents: number
+    readCount: number
+    unreadCount: number
+  }
+}
 
 interface NoticeListProps {
   userRole?: string
   showFilters?: boolean
   showInstitutionFilter?: boolean
   feedType?: "all" | "bookmarked" | "unread"
-  initialNotices?: Notice[]
+  initialNotices?: NoticeListItem[]
 }
 
 export function NoticeList({
@@ -28,7 +39,7 @@ export function NoticeList({
 }: NoticeListProps) {
   const router = useRouter()
   const { user } = useAuth()
-  const [notices, setNotices] = useState<Notice[]>(initialNotices || [])
+  const [notices, setNotices] = useState<NoticeListItem[]>(initialNotices || [])
   const [loading, setLoading] = useState(!initialNotices)
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [filters, setFilters] = useState<FilterValues | null>(null)
@@ -136,7 +147,7 @@ export function NoticeList({
     }
   }
 
-  const canDeleteNotice = (notice: Notice) => {
+  const canDeleteNotice = (notice: NoticeListItem) => {
     if (!user) return false
     if (user.role === "super_admin") return true
     if (user.role === "institution_admin") return notice.institutionId === user.institutionId

@@ -5,6 +5,7 @@ import type { Notice, NoticeDeliveryChannels, NotificationPreferences, User } fr
 import { readEnv } from './env';
 import { getNotificationPreferences } from './notification-preferences';
 import { getLocalizedNoticeContent } from './notice-assistant';
+import { isWhatsAppConfigured, sendNoticeWhatsAppNotifications } from './whatsapp';
 
 function getNormalizedChannels(channels?: Partial<NoticeDeliveryChannels>): NoticeDeliveryChannels {
   return {
@@ -95,18 +96,24 @@ export function getDeliveryChannelStatus() {
         readEnv('SMTP_PASS') &&
         readEnv('SMTP_FROM')
     ),
+    whatsappConfigured: isWhatsAppConfigured(),
   };
 }
 
 export async function deliverNoticeChannels(
   notice: Notice,
   recipients: User[],
-  channels?: Partial<NoticeDeliveryChannels>
+  channels?: Partial<NoticeDeliveryChannels>,
+  options?: { enableWhatsApp?: boolean }
 ) {
   const normalizedChannels = getNormalizedChannels(channels);
 
   if (normalizedChannels.email) {
     await sendNoticeEmails(notice, recipients);
+  }
+
+  if (options?.enableWhatsApp) {
+    await sendNoticeWhatsAppNotifications(notice, recipients);
   }
 }
 

@@ -61,6 +61,15 @@ interface AnalyticsData {
   topNotices: Array<{ id: string; title: string; views: number; reads: number; readRate: number }>
   departmentEngagement: Array<{ name: string; notices: number; views: number; readRate: number }>
   hourlyDistribution: Array<{ hour: string; views: number }>
+  teacherReadAnalytics?: Array<{
+    id: string
+    title: string
+    totalStudents: number
+    readCount: number
+    unreadCount: number
+    readRate: number
+  }>
+  teacherReadDistribution?: Array<{ name: string; value: number; color: string }>
 }
 
 export default function AnalyticsPage() {
@@ -329,6 +338,80 @@ export default function AnalyticsPage() {
         </TabsContent>
 
         <TabsContent value="engagement" className="space-y-6">
+          {analytics.teacherReadAnalytics && analytics.teacherReadAnalytics.length > 0 && (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Notice Read Analytics</CardTitle>
+                  <CardDescription>
+                    Bar chart showing how many students read or did not read each notice
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ChartContainer
+                    config={{
+                      readCount: { label: "Read", color: "#10b981" },
+                      unreadCount: { label: "Unread", color: "#f97316" },
+                    }}
+                    className="h-[320px]"
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={analytics.teacherReadAnalytics}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="title" tickFormatter={(value) => value.length > 14 ? `${value.slice(0, 14)}...` : value} />
+                        <YAxis />
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Legend />
+                        <Bar dataKey="readCount" fill="#10b981" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="unreadCount" fill="#f97316" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Overall Read Distribution</CardTitle>
+                  <CardDescription>
+                    Pie chart of total students who have read versus not read your notices
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[320px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={analytics.teacherReadDistribution}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={70}
+                          outerRadius={110}
+                          paddingAngle={3}
+                          dataKey="value"
+                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        >
+                          {analytics.teacherReadDistribution?.map((entry, index) => (
+                            <Cell key={`teacher-read-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-4 flex flex-wrap justify-center gap-4">
+                    {analytics.teacherReadDistribution?.map((item) => (
+                      <div key={item.name} className="flex items-center gap-2">
+                        <div className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
+                        <span className="text-sm">{item.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>

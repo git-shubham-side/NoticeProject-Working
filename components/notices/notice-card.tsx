@@ -10,9 +10,11 @@ import {
   BookmarkCheck,
   Clock,
   Eye,
+  EyeOff,
   MoreVertical,
   Paperclip,
   Trash2,
+  Users,
 } from 'lucide-react';
 import { NOTICE_PRIORITIES, NOTICE_TARGET_TYPES } from '@/lib/constants';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -25,7 +27,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 interface NoticeCardProps {
-  notice: Notice & { author?: User; isRead?: boolean; isBookmarked?: boolean };
+  notice: Notice & {
+    author?: User;
+    isRead?: boolean;
+    isBookmarked?: boolean;
+    readStats?: {
+      totalStudents: number;
+      readCount: number;
+      unreadCount: number;
+    };
+  };
   variant?: 'default' | 'compact';
   onBookmarkToggle?: (noticeId: string, isBookmarked: boolean) => void;
   onMarkAsRead?: (noticeId: string) => void;
@@ -160,6 +171,32 @@ export function NoticeCard({
           <div className="flex items-center gap-1 text-sm text-muted-foreground mb-4">
             <Paperclip className="h-4 w-4" />
             <span>{notice.attachments.length} attachment{notice.attachments.length > 1 ? 's' : ''}</span>
+          </div>
+        )}
+
+        {notice.readStats && (
+          <div className="mb-2 grid gap-2 sm:grid-cols-3">
+            <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+              <div className="flex items-center gap-1 text-muted-foreground">
+                <Users className="h-3.5 w-3.5" />
+                <span>Students</span>
+              </div>
+              <p className="mt-1 text-sm font-semibold text-foreground">{notice.readStats.totalStudents}</p>
+            </div>
+            <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+              <div className="flex items-center gap-1 text-muted-foreground">
+                <Eye className="h-3.5 w-3.5 text-green-600" />
+                <span>Read</span>
+              </div>
+              <p className="mt-1 text-sm font-semibold text-green-600">{notice.readStats.readCount}</p>
+            </div>
+            <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+              <div className="flex items-center gap-1 text-muted-foreground">
+                <EyeOff className="h-3.5 w-3.5 text-orange-600" />
+                <span>Unread</span>
+              </div>
+              <p className="mt-1 text-sm font-semibold text-orange-600">{notice.readStats.unreadCount}</p>
+            </div>
           </div>
         )}
       </CardContent>

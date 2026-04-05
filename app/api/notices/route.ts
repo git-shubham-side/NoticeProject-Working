@@ -123,6 +123,7 @@ export async function GET(request: Request) {
       author: dataStore.users.find(u => u.id === notice.authorId),
       isRead: readNoticeIds.has(notice.id),
       isBookmarked: bookmarkedNoticeIds.has(notice.id),
+      readStats: canViewReadStats(notice, user) ? getStudentReadStats(notice) : undefined,
     }));
 
     return NextResponse.json({ notices: noticesWithAuthor });
@@ -130,6 +131,62 @@ export async function GET(request: Request) {
     console.error('Notices error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
+}
+
+function getTargetedUserIds(notice: Pick<Notice, 'targetType' | 'targetIds'>) {
+  switch (notice.targetType) {
+    case 'all':
+      return dataStore.users.map(user => user.id);
+    case 'institution':
+      return dataStore.users
+        .filter(user => notice.targetIds.includes(user.institutionId || ''))
+        .map(user => user.id);
+    case 'department':
+      return dataStore.users
+        .filter(user => notice.targetIds.includes(user.departmentId || ''))
+        .map(user => user.id);
+    case 'class':
+      return dataStore.users
+        .filter(user => notice.targetIds.includes(user.classId || ''))
+        .map(user => user.id);
+    case 'specific_users':
+      return notice.targetIds;
+    default:
+      return [];
+  }
+}
+
+function getStudentReadStats(notice: Pick<Notice, 'id' | 'targetType' | 'targetIds'>) {
+  const targetedStudents = dataStore.users.filter(
+    user => user.role === 'student' && getTargetedUserIds(notice).includes(user.id)
+  );
+
+  const readStudentIds = new Set(
+    dataStore.noticeReadStatus
+      .filter(record => record.noticeId === notice.id)
+      .map(record => record.userId)
+  );
+
+  return {
+    totalStudents: targetedStudents.length,
+    readCount: targetedStudents.filter(student => readStudentIds.has(student.id)).length,
+    unreadCount: targetedStudents.filter(student => !readStudentIds.has(student.id)).length,
+  };
+}
+
+function canViewReadStats(
+  notice: Pick<Notice, 'authorId' | 'institutionId'>,
+  user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>
+) {
+  if (user.role === 'super_admin') {
+    return true;
+  }
+
+  if (user.role === 'institution_admin') {
+    return notice.institutionId === user.institutionId;
+  }
+
+  return user.role === 'teacher' && notice.authorId === user.id;
 }
 
 export async function POST(request: Request) {

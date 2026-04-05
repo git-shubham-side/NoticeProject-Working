@@ -1,57 +1,80 @@
-import { mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import 'server-only';
 
-const DB_PATH = join(process.cwd(), 'data', 'noticeboard.sqlite');
+import { connectToMongo, getAppStoreModel } from './mongodb';
 
-function ensureDatabase() {
-  mkdirSync(dirname(DB_PATH), { recursive: true });
-  const db = new DatabaseSync(DB_PATH);
-
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 5000;
-  `);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS app_store (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  return db;
-}
-
-const globalForDb = globalThis as typeof globalThis & {
-  __noticeboardDb?: DatabaseSync;
+const globalForStore = globalThis as typeof globalThis & {
+  __noticeboardStoreCache?: Map<string, string>;
+  __noticeboardStoreHydration?: Promise<void>;
 };
 
-export const db = globalForDb.__noticeboardDb ?? ensureDatabase();
+const storeCache = globalForStore.__noticeboardStoreCache ?? new Map<string, string>();
 
-if (!globalForDb.__noticeboardDb) {
-  globalForDb.__noticeboardDb = db;
+if (!globalForStore.__noticeboardStoreCache) {
+  globalForStore.__noticeboardStoreCache = storeCache;
+}
+
+function requireMongoUri() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    throw new Error('Missing MONGODB_URI environment variable. Configure MongoDB before starting the app.');
+  }
+  return uri;
+}
+
+async function hydrateStoreCache() {
+  requireMongoUri();
+
+  if (globalForStore.__noticeboardStoreHydration) {
+    return globalForStore.__noticeboardStoreHydration;
+  }
+
+  globalForStore.__noticeboardStoreHydration = (async () => {
+    await connectToMongo();
+    const AppStore = getAppStoreModel();
+    const documents = await AppStore.find({}, { _id: 0, key: 1, value: 1 }).lean();
+
+    storeCache.clear();
+    documents.forEach((document) => {
+      storeCache.set(document.key, document.value);
+    });
+  })();
+
+  return globalForStore.__noticeboardStoreHydration;
 }
 
 export function getStoreValue<T>(key: string): T | null {
-  const row = db
-    .prepare('SELECT value FROM app_store WHERE key = ?')
-    .get(key) as { value: string } | undefined;
-
-  if (!row) {
-    return null;
-  }
-
-  return JSON.parse(row.value) as T;
+  requireMongoUri();
+  const cached = storeCache.get(key);
+  return cached ? (JSON.parse(cached) as T) : null;
 }
 
 export function setStoreValue<T>(key: string, value: T) {
-  db.prepare(`
-    INSERT INTO app_store (key, value, updated_at)
-    VALUES (?, ?, ?)
-    ON CONFLICT(key) DO UPDATE SET
-      value = excluded.value,
-      updated_at = excluded.updated_at
-  `).run(key, JSON.stringify(value), new Date().toISOString());
+  requireMongoUri();
+
+  const serialized = JSON.stringify(value);
+  storeCache.set(key, serialized);
+
+  void (async () => {
+    try {
+      await connectToMongo();
+      const AppStore = getAppStoreModel();
+      await AppStore.findOneAndUpdate(
+        { key },
+        {
+          key,
+          value: serialized,
+          updatedAt: new Date(),
+        },
+        {
+          upsert: true,
+        }
+      );
+    } catch (error) {
+      console.error(`Failed to persist "${key}" to MongoDB:`, error);
+    }
+  })();
 }
+
+void hydrateStoreCache().catch((error) => {
+  console.error('MongoDB store initialization failed:', error);
+});
